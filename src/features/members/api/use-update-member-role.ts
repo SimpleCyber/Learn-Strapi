@@ -6,10 +6,11 @@ import { api } from "@/../convex/_generated/api"
 import type { Id } from "@/../convex/_generated/dataModel"
 
 type RequestType = {
-  workspaceId: Id<"workspaces">
+  memberId: Id<"members">
+  role: "admin" | "member" | "lead"
 }
 
-type ResponseType = Id<"workspaces"> | null
+type ResponseType = Id<"members"> | null
 
 type Options = {
   onSuccess?: (data: ResponseType) => void
@@ -18,7 +19,7 @@ type Options = {
   throwError?: boolean
 }
 
-export const useNewJoinCode = () => {
+export const useUpdateMemberRole = () => {
   const [data, setData] = useState<ResponseType>(null)
   const [error, setError] = useState<Error | null>(null)
   const [status, setStatus] = useState<"success" | "error" | "settled" | "pending" | null>(null)
@@ -28,7 +29,7 @@ export const useNewJoinCode = () => {
   const isError = useMemo(() => status === "error", [status])
   const isSettled = useMemo(() => status === "settled", [status])
 
-  const mutation = useMutation(api.workspaces.newJoinCode)
+  const mutation = useMutation(api.members.updateRole)
 
   const mutate = useCallback(
     async (values: RequestType, options?: Options) => {

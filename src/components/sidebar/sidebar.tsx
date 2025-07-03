@@ -23,8 +23,7 @@ export const Sidebar = () => {
     { icon: ListTodo, label: 'Project', path: `/project/${workspaceId}` },
     { icon: Presentation, label: 'Board', path: `/board/${workspaceId}` },
     { icon: UserRoundSearch, label: 'Members', path: `/members/${workspaceId}` },
-    { icon: Network, label: 'Resources', path: `/resources/${workspaceId}` },
-    { icon: Calendar, label: 'Attendence', path: `/members/${workspaceId}` },
+    { icon: Calendar, label: 'Attendence', path: `/attendance/${workspaceId}` },
 
   ];
 

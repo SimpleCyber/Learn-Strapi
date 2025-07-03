@@ -1,15 +1,22 @@
 "use client"
 
 import { useMutation } from "convex/react"
+import { api } from "../../../../convex/_generated/api"
 import { useCallback, useMemo, useState } from "react"
-import { api } from "@/../convex/_generated/api"
-import type { Id } from "@/../convex/_generated/dataModel"
+import type { Id } from "../../../../convex/_generated/dataModel"
 
 type RequestType = {
-  workspaceId: Id<"workspaces">
+  cardId: Id<"todoCards">
+  title?: string
+  description?: string
+  dueDate?: number
+  isCompleted?: boolean
+  labels?: string[]
+  listId?: Id<"todoLists">
+  position?: number
 }
 
-type ResponseType = Id<"workspaces"> | null
+type ResponseType = void
 
 type Options = {
   onSuccess?: (data: ResponseType) => void
@@ -18,8 +25,8 @@ type Options = {
   throwError?: boolean
 }
 
-export const useNewJoinCode = () => {
-  const [data, setData] = useState<ResponseType>(null)
+export const useUpdateCard = () => {
+  const [data, setData] = useState<ResponseType>(undefined)
   const [error, setError] = useState<Error | null>(null)
   const [status, setStatus] = useState<"success" | "error" | "settled" | "pending" | null>(null)
 
@@ -28,12 +35,12 @@ export const useNewJoinCode = () => {
   const isError = useMemo(() => status === "error", [status])
   const isSettled = useMemo(() => status === "settled", [status])
 
-  const mutation = useMutation(api.workspaces.newJoinCode)
+  const mutation = useMutation(api.todos.updateCard)
 
   const mutate = useCallback(
     async (values: RequestType, options?: Options) => {
       try {
-        setData(null)
+        setData(undefined)
         setError(null)
         setStatus("pending")
 
@@ -44,9 +51,12 @@ export const useNewJoinCode = () => {
         return response
       } catch (error) {
         setStatus("error")
-        setError(error as Error)
-        options?.onError?.(error as Error)
-        if (options?.throwError) throw error
+        const err = error as Error
+        setError(err)
+        options?.onError?.(err)
+        if (options?.throwError) {
+          throw error
+        }
       } finally {
         setStatus("settled")
         options?.onSettled?.()
@@ -60,8 +70,8 @@ export const useNewJoinCode = () => {
     data,
     error,
     isPending,
-    isError,
     isSuccess,
+    isError,
     isSettled,
   }
 }
