@@ -16,7 +16,7 @@ type RequestType = {
   position?: number
 }
 
-type ResponseType = void
+type ResponseType = null
 
 type Options = {
   onSuccess?: (data: ResponseType) => void
@@ -26,7 +26,7 @@ type Options = {
 }
 
 export const useUpdateCard = () => {
-  const [data, setData] = useState<ResponseType>(undefined)
+  const [data, setData] = useState<ResponseType>(null)
   const [error, setError] = useState<Error | null>(null)
   const [status, setStatus] = useState<"success" | "error" | "settled" | "pending" | null>(null)
 
@@ -40,7 +40,7 @@ export const useUpdateCard = () => {
   const mutate = useCallback(
     async (values: RequestType, options?: Options) => {
       try {
-        setData(undefined)
+        setData(null)
         setError(null)
         setStatus("pending")
 
