@@ -15,13 +15,11 @@ export const createBoard = mutation({
     if (!userId) {
       throw new Error("Unauthorized")
     }
-
     // Get member
     const member = await ctx.db
       .query("members")
       .withIndex("by_workspace_id_user_id", (q) => q.eq("workspaceId", args.workspaceId).eq("userId", userId))
       .unique()
-
     if (!member) {
       throw new Error("Unauthorized")
     }
@@ -33,6 +31,7 @@ export const createBoard = mutation({
       memberId: member._id,
       workspaceId: args.workspaceId,
       isStarred: false,
+      isArchived: false,
       createdAt: Date.now(),
       updatedAt: Date.now(),
     })
@@ -44,26 +43,27 @@ export const createBoard = mutation({
       memberId: member._id,
       workspaceId: args.workspaceId,
       position: 0,
+      isArchived: false,
       createdAt: Date.now(),
       updatedAt: Date.now(),
     })
-
     await ctx.db.insert("todoLists", {
       name: "Doing",
       boardId,
       memberId: member._id,
       workspaceId: args.workspaceId,
       position: 1,
+      isArchived: false,
       createdAt: Date.now(),
       updatedAt: Date.now(),
     })
-
     await ctx.db.insert("todoLists", {
       name: "Done",
       boardId,
       memberId: member._id,
       workspaceId: args.workspaceId,
       position: 2,
+      isArchived: false,
       createdAt: Date.now(),
       updatedAt: Date.now(),
     })
@@ -73,7 +73,10 @@ export const createBoard = mutation({
 })
 
 export const getBoards = query({
-  args: { workspaceId: v.id("workspaces") },
+  args: {
+    workspaceId: v.id("workspaces"),
+    includeArchived: v.optional(v.boolean()),
+  },
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx)
     if (!userId) {
@@ -84,16 +87,19 @@ export const getBoards = query({
       .query("members")
       .withIndex("by_workspace_id_user_id", (q) => q.eq("workspaceId", args.workspaceId).eq("userId", userId))
       .unique()
-
     if (!member) {
       return []
     }
 
-    return await ctx.db
+    const query = ctx.db
       .query("todoBoards")
       .withIndex("by_member_workspace", (q) => q.eq("memberId", member._id).eq("workspaceId", args.workspaceId))
-      .order("desc")
-      .collect()
+
+    const boards = await query.collect()
+
+    return boards
+      .filter((board) => (args.includeArchived ? true : !board.isArchived))
+      .sort((a, b) => b.createdAt - a.createdAt)
   },
 })
 
@@ -126,6 +132,7 @@ export const updateBoard = mutation({
     description: v.optional(v.string()),
     background: v.optional(v.string()),
     isStarred: v.optional(v.boolean()),
+    isArchived: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx)
@@ -174,47 +181,39 @@ export const deleteBoard = mutation({
       .query("todoLists")
       .withIndex("by_board_id", (q) => q.eq("boardId", args.boardId))
       .collect()
-
     for (const list of lists) {
       const cards = await ctx.db
         .query("todoCards")
         .withIndex("by_list_id", (q) => q.eq("listId", list._id))
         .collect()
-
       for (const card of cards) {
         // Delete checklists and items
         const checklists = await ctx.db
           .query("todoChecklists")
           .withIndex("by_card_id", (q) => q.eq("cardId", card._id))
           .collect()
-
         for (const checklist of checklists) {
           const items = await ctx.db
             .query("todoChecklistItems")
             .withIndex("by_checklist_id", (q) => q.eq("checklistId", checklist._id))
             .collect()
-
           for (const item of items) {
             await ctx.db.delete(item._id)
           }
           await ctx.db.delete(checklist._id)
         }
-
         // Delete comments
         const comments = await ctx.db
           .query("todoComments")
           .withIndex("by_card_id", (q) => q.eq("cardId", card._id))
           .collect()
-
         for (const comment of comments) {
           await ctx.db.delete(comment._id)
         }
-
         await ctx.db.delete(card._id)
       }
       await ctx.db.delete(list._id)
     }
-
     await ctx.db.delete(args.boardId)
   },
 })
@@ -246,7 +245,6 @@ export const createList = mutation({
       .query("todoLists")
       .withIndex("by_board_id", (q) => q.eq("boardId", args.boardId))
       .collect()
-
     const maxPosition = Math.max(...lists.map((l) => l.position), -1)
 
     return await ctx.db.insert("todoLists", {
@@ -255,6 +253,7 @@ export const createList = mutation({
       memberId: member._id,
       workspaceId: board.workspaceId,
       position: maxPosition + 1,
+      isArchived: false,
       createdAt: Date.now(),
       updatedAt: Date.now(),
     })
@@ -262,7 +261,10 @@ export const createList = mutation({
 })
 
 export const getLists = query({
-  args: { boardId: v.id("todoBoards") },
+  args: {
+    boardId: v.id("todoBoards"),
+    includeArchived: v.optional(v.boolean()),
+  },
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx)
     if (!userId) {
@@ -279,11 +281,14 @@ export const getLists = query({
       return []
     }
 
-    return await ctx.db
+    const lists = await ctx.db
       .query("todoLists")
       .withIndex("by_board_id", (q) => q.eq("boardId", args.boardId))
-      .order("asc")
       .collect()
+
+    return lists
+      .filter((list) => (args.includeArchived ? true : !list.isArchived))
+      .sort((a, b) => a.position - b.position)
   },
 })
 
@@ -292,6 +297,7 @@ export const updateList = mutation({
     listId: v.id("todoLists"),
     name: v.optional(v.string()),
     position: v.optional(v.number()),
+    isArchived: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx)
@@ -340,39 +346,32 @@ export const deleteList = mutation({
       .query("todoCards")
       .withIndex("by_list_id", (q) => q.eq("listId", args.listId))
       .collect()
-
     for (const card of cards) {
       // Delete checklists and items
       const checklists = await ctx.db
         .query("todoChecklists")
         .withIndex("by_card_id", (q) => q.eq("cardId", card._id))
         .collect()
-
       for (const checklist of checklists) {
         const items = await ctx.db
           .query("todoChecklistItems")
           .withIndex("by_checklist_id", (q) => q.eq("checklistId", checklist._id))
           .collect()
-
         for (const item of items) {
           await ctx.db.delete(item._id)
         }
         await ctx.db.delete(checklist._id)
       }
-
       // Delete comments
       const comments = await ctx.db
         .query("todoComments")
         .withIndex("by_card_id", (q) => q.eq("cardId", card._id))
         .collect()
-
       for (const comment of comments) {
         await ctx.db.delete(comment._id)
       }
-
       await ctx.db.delete(card._id)
     }
-
     await ctx.db.delete(args.listId)
   },
 })
@@ -404,7 +403,6 @@ export const createCard = mutation({
       .query("todoCards")
       .withIndex("by_list_id", (q) => q.eq("listId", args.listId))
       .collect()
-
     const maxPosition = Math.max(...cards.map((c) => c.position), -1)
 
     return await ctx.db.insert("todoCards", {
@@ -415,6 +413,7 @@ export const createCard = mutation({
       workspaceId: list.workspaceId,
       position: maxPosition + 1,
       isCompleted: false,
+      isArchived: false,
       createdAt: Date.now(),
       updatedAt: Date.now(),
     })
@@ -422,7 +421,10 @@ export const createCard = mutation({
 })
 
 export const getCards = query({
-  args: { listId: v.id("todoLists") },
+  args: {
+    listId: v.id("todoLists"),
+    includeArchived: v.optional(v.boolean()),
+  },
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx)
     if (!userId) {
@@ -439,11 +441,14 @@ export const getCards = query({
       return []
     }
 
-    return await ctx.db
+    const cards = await ctx.db
       .query("todoCards")
       .withIndex("by_list_id", (q) => q.eq("listId", args.listId))
-      .order("asc")
       .collect()
+
+    return cards
+      .filter((card) => (args.includeArchived ? true : !card.isArchived))
+      .sort((a, b) => a.position - b.position)
   },
 })
 
@@ -476,6 +481,7 @@ export const updateCard = mutation({
     description: v.optional(v.string()),
     dueDate: v.optional(v.number()),
     isCompleted: v.optional(v.boolean()),
+    isArchived: v.optional(v.boolean()),
     labels: v.optional(v.array(v.string())),
     listId: v.optional(v.id("todoLists")),
     position: v.optional(v.number()),
@@ -527,34 +533,73 @@ export const deleteCard = mutation({
       .query("todoChecklists")
       .withIndex("by_card_id", (q) => q.eq("cardId", args.cardId))
       .collect()
-
     for (const checklist of checklists) {
       const items = await ctx.db
         .query("todoChecklistItems")
         .withIndex("by_checklist_id", (q) => q.eq("checklistId", checklist._id))
         .collect()
-
       for (const item of items) {
         await ctx.db.delete(item._id)
       }
       await ctx.db.delete(checklist._id)
     }
-
     // Delete comments
     const comments = await ctx.db
       .query("todoComments")
       .withIndex("by_card_id", (q) => q.eq("cardId", args.cardId))
       .collect()
-
     for (const comment of comments) {
       await ctx.db.delete(comment._id)
     }
-
     await ctx.db.delete(args.cardId)
   },
 })
 
-// Checklist functions
+// Get recent cards for workspace
+export const getRecentCards = query({
+  args: {
+    workspaceId: v.id("workspaces"),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const userId = await getAuthUserId(ctx)
+    if (!userId) {
+      return []
+    }
+
+    const member = await ctx.db
+      .query("members")
+      .withIndex("by_workspace_id_user_id", (q) => q.eq("workspaceId", args.workspaceId).eq("userId", userId))
+      .unique()
+    if (!member) {
+      return []
+    }
+
+    const cards = await ctx.db
+      .query("todoCards")
+      .withIndex("by_workspace_id", (q) => q.eq("workspaceId", args.workspaceId))
+      .filter((q) => q.eq(q.field("isArchived"), false))
+      .order("desc")
+      .take(args.limit || 10)
+
+    // Get board and list info for each card
+    const cardsWithDetails = await Promise.all(
+      cards.map(async (card) => {
+        const list = await ctx.db.get(card.listId)
+        const board = await ctx.db.get(card.boardId)
+        return {
+          ...card,
+          list,
+          board,
+        }
+      }),
+    )
+
+    return cardsWithDetails
+  },
+})
+
+// Checklist functions (keeping existing ones)
 export const createChecklist = mutation({
   args: {
     title: v.string(),
@@ -580,7 +625,6 @@ export const createChecklist = mutation({
       .query("todoChecklists")
       .withIndex("by_card_id", (q) => q.eq("cardId", args.cardId))
       .collect()
-
     const maxPosition = Math.max(...checklists.map((c) => c.position), -1)
 
     return await ctx.db.insert("todoChecklists", {
@@ -645,7 +689,6 @@ export const createChecklistItem = mutation({
       .query("todoChecklistItems")
       .withIndex("by_checklist_id", (q) => q.eq("checklistId", args.checklistId))
       .collect()
-
     const maxPosition = Math.max(...items.map((i) => i.position), -1)
 
     return await ctx.db.insert("todoChecklistItems", {

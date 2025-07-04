@@ -108,24 +108,28 @@ const schema = defineSchema({
     memberId: v.id("members"),
     workspaceId: v.id("workspaces"),
     isStarred: v.optional(v.boolean()),
+    isArchived: v.optional(v.boolean()),
     createdAt: v.number(),
     updatedAt: v.number(),
   })
     .index("by_member_id", ["memberId"])
     .index("by_workspace_id", ["workspaceId"])
-    .index("by_member_workspace", ["memberId", "workspaceId"]),
+    .index("by_member_workspace", ["memberId", "workspaceId"])
+    .index("by_workspace_archived", ["workspaceId", "isArchived"]),
   todoLists: defineTable({
     name: v.string(),
     boardId: v.id("todoBoards"),
     memberId: v.id("members"),
     workspaceId: v.id("workspaces"),
     position: v.number(),
+    isArchived: v.optional(v.boolean()),
     createdAt: v.number(),
     updatedAt: v.number(),
   })
     .index("by_board_id", ["boardId"])
     .index("by_member_id", ["memberId"])
-    .index("by_workspace_id", ["workspaceId"]),
+    .index("by_workspace_id", ["workspaceId"])
+    .index("by_board_archived", ["boardId", "isArchived"]),
   todoCards: defineTable({
     title: v.string(),
     description: v.optional(v.string()),
@@ -136,6 +140,7 @@ const schema = defineSchema({
     position: v.number(),
     dueDate: v.optional(v.number()),
     isCompleted: v.optional(v.boolean()),
+    isArchived: v.optional(v.boolean()),
     labels: v.optional(v.array(v.string())),
     attachments: v.optional(v.array(v.id("_storage"))),
     createdAt: v.number(),
@@ -144,7 +149,8 @@ const schema = defineSchema({
     .index("by_list_id", ["listId"])
     .index("by_board_id", ["boardId"])
     .index("by_member_id", ["memberId"])
-    .index("by_workspace_id", ["workspaceId"]),
+    .index("by_workspace_id", ["workspaceId"])
+    .index("by_list_archived", ["listId", "isArchived"]),
   todoChecklists: defineTable({
     title: v.string(),
     cardId: v.id("todoCards"),
