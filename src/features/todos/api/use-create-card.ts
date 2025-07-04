@@ -8,8 +8,6 @@ import type { Id } from "../../../../convex/_generated/dataModel"
 type RequestType = {
   title: string
   listId: Id<"todoLists">
-  boardId: Id<"todoBoards">
-  description?: string
 }
 
 type ResponseType = Id<"todoCards"> | null

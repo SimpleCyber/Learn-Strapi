@@ -2,13 +2,13 @@ import { v } from "convex/values"
 import { mutation, query } from "./_generated/server"
 import { getAuthUserId } from "@convex-dev/auth/server"
 
-// Board operations
+// Board functions
 export const createBoard = mutation({
   args: {
-    title: v.string(),
+    name: v.string(),
     description: v.optional(v.string()),
+    background: v.optional(v.string()),
     workspaceId: v.id("workspaces"),
-    backgroundColor: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx)
@@ -16,12 +16,54 @@ export const createBoard = mutation({
       throw new Error("Unauthorized")
     }
 
+    // Get member
+    const member = await ctx.db
+      .query("members")
+      .withIndex("by_workspace_id_user_id", (q) => q.eq("workspaceId", args.workspaceId).eq("userId", userId))
+      .unique()
+
+    if (!member) {
+      throw new Error("Unauthorized")
+    }
+
     const boardId = await ctx.db.insert("todoBoards", {
-      title: args.title,
+      name: args.name,
       description: args.description,
-      userId,
+      background: args.background,
+      memberId: member._id,
       workspaceId: args.workspaceId,
-      backgroundColor: args.backgroundColor,
+      isStarred: false,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    })
+
+    // Create default lists
+    await ctx.db.insert("todoLists", {
+      name: "To Do",
+      boardId,
+      memberId: member._id,
+      workspaceId: args.workspaceId,
+      position: 0,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    })
+
+    await ctx.db.insert("todoLists", {
+      name: "Doing",
+      boardId,
+      memberId: member._id,
+      workspaceId: args.workspaceId,
+      position: 1,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    })
+
+    await ctx.db.insert("todoLists", {
+      name: "Done",
+      boardId,
+      memberId: member._id,
+      workspaceId: args.workspaceId,
+      position: 2,
       createdAt: Date.now(),
       updatedAt: Date.now(),
     })
@@ -31,28 +73,32 @@ export const createBoard = mutation({
 })
 
 export const getBoards = query({
-  args: {
-    workspaceId: v.id("workspaces"),
-  },
+  args: { workspaceId: v.id("workspaces") },
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx)
     if (!userId) {
       return []
     }
 
-    const boards = await ctx.db
-      .query("todoBoards")
-      .withIndex("by_user_workspace", (q) => q.eq("userId", userId).eq("workspaceId", args.workspaceId))
-      .collect()
+    const member = await ctx.db
+      .query("members")
+      .withIndex("by_workspace_id_user_id", (q) => q.eq("workspaceId", args.workspaceId).eq("userId", userId))
+      .unique()
 
-    return boards
+    if (!member) {
+      return []
+    }
+
+    return await ctx.db
+      .query("todoBoards")
+      .withIndex("by_member_workspace", (q) => q.eq("memberId", member._id).eq("workspaceId", args.workspaceId))
+      .order("desc")
+      .collect()
   },
 })
 
 export const getBoard = query({
-  args: {
-    boardId: v.id("todoBoards"),
-  },
+  args: { boardId: v.id("todoBoards") },
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx)
     if (!userId) {
@@ -60,7 +106,12 @@ export const getBoard = query({
     }
 
     const board = await ctx.db.get(args.boardId)
-    if (!board || board.userId !== userId) {
+    if (!board) {
+      return null
+    }
+
+    const member = await ctx.db.get(board.memberId)
+    if (!member || member.userId !== userId) {
       return null
     }
 
@@ -71,9 +122,10 @@ export const getBoard = query({
 export const updateBoard = mutation({
   args: {
     boardId: v.id("todoBoards"),
-    title: v.optional(v.string()),
+    name: v.optional(v.string()),
     description: v.optional(v.string()),
-    backgroundColor: v.optional(v.string()),
+    background: v.optional(v.string()),
+    isStarred: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx)
@@ -82,23 +134,25 @@ export const updateBoard = mutation({
     }
 
     const board = await ctx.db.get(args.boardId)
-    if (!board || board.userId !== userId) {
-      throw new Error("Board not found or unauthorized")
+    if (!board) {
+      throw new Error("Board not found")
     }
 
-    const updates: any = { updatedAt: Date.now() }
-    if (args.title !== undefined) updates.title = args.title
-    if (args.description !== undefined) updates.description = args.description
-    if (args.backgroundColor !== undefined) updates.backgroundColor = args.backgroundColor
+    const member = await ctx.db.get(board.memberId)
+    if (!member || member.userId !== userId) {
+      throw new Error("Unauthorized")
+    }
 
-    await ctx.db.patch(args.boardId, updates)
+    const { boardId, ...updates } = args
+    await ctx.db.patch(args.boardId, {
+      ...updates,
+      updatedAt: Date.now(),
+    })
   },
 })
 
 export const deleteBoard = mutation({
-  args: {
-    boardId: v.id("todoBoards"),
-  },
+  args: { boardId: v.id("todoBoards") },
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx)
     if (!userId) {
@@ -106,39 +160,69 @@ export const deleteBoard = mutation({
     }
 
     const board = await ctx.db.get(args.boardId)
-    if (!board || board.userId !== userId) {
-      throw new Error("Board not found or unauthorized")
+    if (!board) {
+      throw new Error("Board not found")
     }
 
-    // Delete all cards in the board
-    const cards = await ctx.db
-      .query("todoCards")
-      .withIndex("by_board", (q) => q.eq("boardId", args.boardId))
-      .collect()
-
-    for (const card of cards) {
-      await ctx.db.delete(card._id)
+    const member = await ctx.db.get(board.memberId)
+    if (!member || member.userId !== userId) {
+      throw new Error("Unauthorized")
     }
 
-    // Delete all lists in the board
+    // Delete all related data
     const lists = await ctx.db
       .query("todoLists")
-      .withIndex("by_board", (q) => q.eq("boardId", args.boardId))
+      .withIndex("by_board_id", (q) => q.eq("boardId", args.boardId))
       .collect()
 
     for (const list of lists) {
+      const cards = await ctx.db
+        .query("todoCards")
+        .withIndex("by_list_id", (q) => q.eq("listId", list._id))
+        .collect()
+
+      for (const card of cards) {
+        // Delete checklists and items
+        const checklists = await ctx.db
+          .query("todoChecklists")
+          .withIndex("by_card_id", (q) => q.eq("cardId", card._id))
+          .collect()
+
+        for (const checklist of checklists) {
+          const items = await ctx.db
+            .query("todoChecklistItems")
+            .withIndex("by_checklist_id", (q) => q.eq("checklistId", checklist._id))
+            .collect()
+
+          for (const item of items) {
+            await ctx.db.delete(item._id)
+          }
+          await ctx.db.delete(checklist._id)
+        }
+
+        // Delete comments
+        const comments = await ctx.db
+          .query("todoComments")
+          .withIndex("by_card_id", (q) => q.eq("cardId", card._id))
+          .collect()
+
+        for (const comment of comments) {
+          await ctx.db.delete(comment._id)
+        }
+
+        await ctx.db.delete(card._id)
+      }
       await ctx.db.delete(list._id)
     }
 
-    // Delete the board
     await ctx.db.delete(args.boardId)
   },
 })
 
-// List operations
+// List functions
 export const createList = mutation({
   args: {
-    title: v.string(),
+    name: v.string(),
     boardId: v.id("todoBoards"),
   },
   handler: async (ctx, args) => {
@@ -148,35 +232,37 @@ export const createList = mutation({
     }
 
     const board = await ctx.db.get(args.boardId)
-    if (!board || board.userId !== userId) {
-      throw new Error("Board not found or unauthorized")
+    if (!board) {
+      throw new Error("Board not found")
+    }
+
+    const member = await ctx.db.get(board.memberId)
+    if (!member || member.userId !== userId) {
+      throw new Error("Unauthorized")
     }
 
     // Get the highest position
     const lists = await ctx.db
       .query("todoLists")
-      .withIndex("by_board", (q) => q.eq("boardId", args.boardId))
+      .withIndex("by_board_id", (q) => q.eq("boardId", args.boardId))
       .collect()
 
     const maxPosition = Math.max(...lists.map((l) => l.position), -1)
 
-    const listId = await ctx.db.insert("todoLists", {
-      title: args.title,
+    return await ctx.db.insert("todoLists", {
+      name: args.name,
       boardId: args.boardId,
-      userId,
+      memberId: member._id,
+      workspaceId: board.workspaceId,
       position: maxPosition + 1,
       createdAt: Date.now(),
       updatedAt: Date.now(),
     })
-
-    return listId
   },
 })
 
 export const getLists = query({
-  args: {
-    boardId: v.id("todoBoards"),
-  },
+  args: { boardId: v.id("todoBoards") },
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx)
     if (!userId) {
@@ -184,23 +270,27 @@ export const getLists = query({
     }
 
     const board = await ctx.db.get(args.boardId)
-    if (!board || board.userId !== userId) {
+    if (!board) {
       return []
     }
 
-    const lists = await ctx.db
-      .query("todoLists")
-      .withIndex("by_board", (q) => q.eq("boardId", args.boardId))
-      .collect()
+    const member = await ctx.db.get(board.memberId)
+    if (!member || member.userId !== userId) {
+      return []
+    }
 
-    return lists.sort((a, b) => a.position - b.position)
+    return await ctx.db
+      .query("todoLists")
+      .withIndex("by_board_id", (q) => q.eq("boardId", args.boardId))
+      .order("asc")
+      .collect()
   },
 })
 
 export const updateList = mutation({
   args: {
     listId: v.id("todoLists"),
-    title: v.optional(v.string()),
+    name: v.optional(v.string()),
     position: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
@@ -210,22 +300,25 @@ export const updateList = mutation({
     }
 
     const list = await ctx.db.get(args.listId)
-    if (!list || list.userId !== userId) {
-      throw new Error("List not found or unauthorized")
+    if (!list) {
+      throw new Error("List not found")
     }
 
-    const updates: any = { updatedAt: Date.now() }
-    if (args.title !== undefined) updates.title = args.title
-    if (args.position !== undefined) updates.position = args.position
+    const member = await ctx.db.get(list.memberId)
+    if (!member || member.userId !== userId) {
+      throw new Error("Unauthorized")
+    }
 
-    await ctx.db.patch(args.listId, updates)
+    const { listId, ...updates } = args
+    await ctx.db.patch(args.listId, {
+      ...updates,
+      updatedAt: Date.now(),
+    })
   },
 })
 
 export const deleteList = mutation({
-  args: {
-    listId: v.id("todoLists"),
-  },
+  args: { listId: v.id("todoLists") },
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx)
     if (!userId) {
@@ -233,32 +326,62 @@ export const deleteList = mutation({
     }
 
     const list = await ctx.db.get(args.listId)
-    if (!list || list.userId !== userId) {
-      throw new Error("List not found or unauthorized")
+    if (!list) {
+      throw new Error("List not found")
     }
 
-    // Delete all cards in the list
+    const member = await ctx.db.get(list.memberId)
+    if (!member || member.userId !== userId) {
+      throw new Error("Unauthorized")
+    }
+
+    // Delete all cards in this list
     const cards = await ctx.db
       .query("todoCards")
-      .withIndex("by_list", (q) => q.eq("listId", args.listId))
+      .withIndex("by_list_id", (q) => q.eq("listId", args.listId))
       .collect()
 
     for (const card of cards) {
+      // Delete checklists and items
+      const checklists = await ctx.db
+        .query("todoChecklists")
+        .withIndex("by_card_id", (q) => q.eq("cardId", card._id))
+        .collect()
+
+      for (const checklist of checklists) {
+        const items = await ctx.db
+          .query("todoChecklistItems")
+          .withIndex("by_checklist_id", (q) => q.eq("checklistId", checklist._id))
+          .collect()
+
+        for (const item of items) {
+          await ctx.db.delete(item._id)
+        }
+        await ctx.db.delete(checklist._id)
+      }
+
+      // Delete comments
+      const comments = await ctx.db
+        .query("todoComments")
+        .withIndex("by_card_id", (q) => q.eq("cardId", card._id))
+        .collect()
+
+      for (const comment of comments) {
+        await ctx.db.delete(comment._id)
+      }
+
       await ctx.db.delete(card._id)
     }
 
-    // Delete the list
     await ctx.db.delete(args.listId)
   },
 })
 
-// Card operations
+// Card functions
 export const createCard = mutation({
   args: {
     title: v.string(),
     listId: v.id("todoLists"),
-    boardId: v.id("todoBoards"),
-    description: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx)
@@ -267,40 +390,39 @@ export const createCard = mutation({
     }
 
     const list = await ctx.db.get(args.listId)
-    if (!list || list.userId !== userId) {
-      throw new Error("List not found or unauthorized")
+    if (!list) {
+      throw new Error("List not found")
     }
 
-    // Get the highest position in the list
+    const member = await ctx.db.get(list.memberId)
+    if (!member || member.userId !== userId) {
+      throw new Error("Unauthorized")
+    }
+
+    // Get the highest position in this list
     const cards = await ctx.db
       .query("todoCards")
-      .withIndex("by_list", (q) => q.eq("listId", args.listId))
+      .withIndex("by_list_id", (q) => q.eq("listId", args.listId))
       .collect()
 
     const maxPosition = Math.max(...cards.map((c) => c.position), -1)
 
-    const cardId = await ctx.db.insert("todoCards", {
+    return await ctx.db.insert("todoCards", {
       title: args.title,
-      description: args.description,
       listId: args.listId,
-      boardId: args.boardId,
-      userId,
+      boardId: list.boardId,
+      memberId: member._id,
+      workspaceId: list.workspaceId,
       position: maxPosition + 1,
-      dueDate: undefined,
       isCompleted: false,
-      labels: [],
       createdAt: Date.now(),
       updatedAt: Date.now(),
     })
-
-    return cardId
   },
 })
 
 export const getCards = query({
-  args: {
-    listId: v.id("todoLists"),
-  },
+  args: { listId: v.id("todoLists") },
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx)
     if (!userId) {
@@ -308,23 +430,25 @@ export const getCards = query({
     }
 
     const list = await ctx.db.get(args.listId)
-    if (!list || list.userId !== userId) {
+    if (!list) {
       return []
     }
 
-    const cards = await ctx.db
-      .query("todoCards")
-      .withIndex("by_list", (q) => q.eq("listId", args.listId))
-      .collect()
+    const member = await ctx.db.get(list.memberId)
+    if (!member || member.userId !== userId) {
+      return []
+    }
 
-    return cards.sort((a, b) => a.position - b.position)
+    return await ctx.db
+      .query("todoCards")
+      .withIndex("by_list_id", (q) => q.eq("listId", args.listId))
+      .order("asc")
+      .collect()
   },
 })
 
 export const getCard = query({
-  args: {
-    cardId: v.id("todoCards"),
-  },
+  args: { cardId: v.id("todoCards") },
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx)
     if (!userId) {
@@ -332,7 +456,12 @@ export const getCard = query({
     }
 
     const card = await ctx.db.get(args.cardId)
-    if (!card || card.userId !== userId) {
+    if (!card) {
+      return null
+    }
+
+    const member = await ctx.db.get(card.memberId)
+    if (!member || member.userId !== userId) {
       return null
     }
 
@@ -358,27 +487,25 @@ export const updateCard = mutation({
     }
 
     const card = await ctx.db.get(args.cardId)
-    if (!card || card.userId !== userId) {
-      throw new Error("Card not found or unauthorized")
+    if (!card) {
+      throw new Error("Card not found")
     }
 
-    const updates: any = { updatedAt: Date.now() }
-    if (args.title !== undefined) updates.title = args.title
-    if (args.description !== undefined) updates.description = args.description
-    if (args.dueDate !== undefined) updates.dueDate = args.dueDate
-    if (args.isCompleted !== undefined) updates.isCompleted = args.isCompleted
-    if (args.labels !== undefined) updates.labels = args.labels
-    if (args.listId !== undefined) updates.listId = args.listId
-    if (args.position !== undefined) updates.position = args.position
+    const member = await ctx.db.get(card.memberId)
+    if (!member || member.userId !== userId) {
+      throw new Error("Unauthorized")
+    }
 
-    await ctx.db.patch(args.cardId, updates)
+    const { cardId, ...updates } = args
+    await ctx.db.patch(args.cardId, {
+      ...updates,
+      updatedAt: Date.now(),
+    })
   },
 })
 
 export const deleteCard = mutation({
-  args: {
-    cardId: v.id("todoCards"),
-  },
+  args: { cardId: v.id("todoCards") },
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx)
     if (!userId) {
@@ -386,21 +513,52 @@ export const deleteCard = mutation({
     }
 
     const card = await ctx.db.get(args.cardId)
-    if (!card || card.userId !== userId) {
-      throw new Error("Card not found or unauthorized")
+    if (!card) {
+      throw new Error("Card not found")
+    }
+
+    const member = await ctx.db.get(card.memberId)
+    if (!member || member.userId !== userId) {
+      throw new Error("Unauthorized")
+    }
+
+    // Delete checklists and items
+    const checklists = await ctx.db
+      .query("todoChecklists")
+      .withIndex("by_card_id", (q) => q.eq("cardId", args.cardId))
+      .collect()
+
+    for (const checklist of checklists) {
+      const items = await ctx.db
+        .query("todoChecklistItems")
+        .withIndex("by_checklist_id", (q) => q.eq("checklistId", checklist._id))
+        .collect()
+
+      for (const item of items) {
+        await ctx.db.delete(item._id)
+      }
+      await ctx.db.delete(checklist._id)
+    }
+
+    // Delete comments
+    const comments = await ctx.db
+      .query("todoComments")
+      .withIndex("by_card_id", (q) => q.eq("cardId", args.cardId))
+      .collect()
+
+    for (const comment of comments) {
+      await ctx.db.delete(comment._id)
     }
 
     await ctx.db.delete(args.cardId)
   },
 })
 
-export const moveCard = mutation({
+// Checklist functions
+export const createChecklist = mutation({
   args: {
+    title: v.string(),
     cardId: v.id("todoCards"),
-    sourceListId: v.id("todoLists"),
-    destinationListId: v.id("todoLists"),
-    sourceIndex: v.number(),
-    destinationIndex: v.number(),
   },
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx)
@@ -409,65 +567,221 @@ export const moveCard = mutation({
     }
 
     const card = await ctx.db.get(args.cardId)
-    if (!card || card.userId !== userId) {
-      throw new Error("Card not found or unauthorized")
+    if (!card) {
+      throw new Error("Card not found")
     }
 
-    // Update the card's list and position
-    await ctx.db.patch(args.cardId, {
-      listId: args.destinationListId,
-      position: args.destinationIndex,
-      updatedAt: Date.now(),
+    const member = await ctx.db.get(card.memberId)
+    if (!member || member.userId !== userId) {
+      throw new Error("Unauthorized")
+    }
+
+    const checklists = await ctx.db
+      .query("todoChecklists")
+      .withIndex("by_card_id", (q) => q.eq("cardId", args.cardId))
+      .collect()
+
+    const maxPosition = Math.max(...checklists.map((c) => c.position), -1)
+
+    return await ctx.db.insert("todoChecklists", {
+      title: args.title,
+      cardId: args.cardId,
+      memberId: member._id,
+      workspaceId: card.workspaceId,
+      position: maxPosition + 1,
+      createdAt: Date.now(),
     })
+  },
+})
 
-    // Update positions of other cards in source list
-    if (args.sourceListId === args.destinationListId) {
-      // Moving within the same list
-      const cards = await ctx.db
-        .query("todoCards")
-        .withIndex("by_list", (q) => q.eq("listId", args.sourceListId))
-        .collect()
-
-      for (const c of cards) {
-        if (c._id === args.cardId) continue
-
-        if (args.sourceIndex < args.destinationIndex) {
-          // Moving down
-          if (c.position > args.sourceIndex && c.position <= args.destinationIndex) {
-            await ctx.db.patch(c._id, { position: c.position - 1 })
-          }
-        } else {
-          // Moving up
-          if (c.position >= args.destinationIndex && c.position < args.sourceIndex) {
-            await ctx.db.patch(c._id, { position: c.position + 1 })
-          }
-        }
-      }
-    } else {
-      // Moving between different lists
-      // Update source list positions
-      const sourceCards = await ctx.db
-        .query("todoCards")
-        .withIndex("by_list", (q) => q.eq("listId", args.sourceListId))
-        .collect()
-
-      for (const c of sourceCards) {
-        if (c.position > args.sourceIndex) {
-          await ctx.db.patch(c._id, { position: c.position - 1 })
-        }
-      }
-
-      // Update destination list positions
-      const destCards = await ctx.db
-        .query("todoCards")
-        .withIndex("by_list", (q) => q.eq("listId", args.destinationListId))
-        .collect()
-
-      for (const c of destCards) {
-        if (c._id !== args.cardId && c.position >= args.destinationIndex) {
-          await ctx.db.patch(c._id, { position: c.position + 1 })
-        }
-      }
+export const getChecklists = query({
+  args: { cardId: v.id("todoCards") },
+  handler: async (ctx, args) => {
+    const userId = await getAuthUserId(ctx)
+    if (!userId) {
+      return []
     }
+
+    const card = await ctx.db.get(args.cardId)
+    if (!card) {
+      return []
+    }
+
+    const member = await ctx.db.get(card.memberId)
+    if (!member || member.userId !== userId) {
+      return []
+    }
+
+    return await ctx.db
+      .query("todoChecklists")
+      .withIndex("by_card_id", (q) => q.eq("cardId", args.cardId))
+      .order("asc")
+      .collect()
+  },
+})
+
+export const createChecklistItem = mutation({
+  args: {
+    text: v.string(),
+    checklistId: v.id("todoChecklists"),
+  },
+  handler: async (ctx, args) => {
+    const userId = await getAuthUserId(ctx)
+    if (!userId) {
+      throw new Error("Unauthorized")
+    }
+
+    const checklist = await ctx.db.get(args.checklistId)
+    if (!checklist) {
+      throw new Error("Checklist not found")
+    }
+
+    const member = await ctx.db.get(checklist.memberId)
+    if (!member || member.userId !== userId) {
+      throw new Error("Unauthorized")
+    }
+
+    const items = await ctx.db
+      .query("todoChecklistItems")
+      .withIndex("by_checklist_id", (q) => q.eq("checklistId", args.checklistId))
+      .collect()
+
+    const maxPosition = Math.max(...items.map((i) => i.position), -1)
+
+    return await ctx.db.insert("todoChecklistItems", {
+      text: args.text,
+      checklistId: args.checklistId,
+      cardId: checklist.cardId,
+      memberId: member._id,
+      workspaceId: checklist.workspaceId,
+      isCompleted: false,
+      position: maxPosition + 1,
+      createdAt: Date.now(),
+    })
+  },
+})
+
+export const getChecklistItems = query({
+  args: { checklistId: v.id("todoChecklists") },
+  handler: async (ctx, args) => {
+    const userId = await getAuthUserId(ctx)
+    if (!userId) {
+      return []
+    }
+
+    const checklist = await ctx.db.get(args.checklistId)
+    if (!checklist) {
+      return []
+    }
+
+    const member = await ctx.db.get(checklist.memberId)
+    if (!member || member.userId !== userId) {
+      return []
+    }
+
+    return await ctx.db
+      .query("todoChecklistItems")
+      .withIndex("by_checklist_id", (q) => q.eq("checklistId", args.checklistId))
+      .order("asc")
+      .collect()
+  },
+})
+
+export const updateChecklistItem = mutation({
+  args: {
+    itemId: v.id("todoChecklistItems"),
+    text: v.optional(v.string()),
+    isCompleted: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args) => {
+    const userId = await getAuthUserId(ctx)
+    if (!userId) {
+      throw new Error("Unauthorized")
+    }
+
+    const item = await ctx.db.get(args.itemId)
+    if (!item) {
+      throw new Error("Item not found")
+    }
+
+    const member = await ctx.db.get(item.memberId)
+    if (!member || member.userId !== userId) {
+      throw new Error("Unauthorized")
+    }
+
+    const { itemId, ...updates } = args
+    await ctx.db.patch(args.itemId, updates)
+  },
+})
+
+// Comment functions
+export const createComment = mutation({
+  args: {
+    content: v.string(),
+    cardId: v.id("todoCards"),
+  },
+  handler: async (ctx, args) => {
+    const userId = await getAuthUserId(ctx)
+    if (!userId) {
+      throw new Error("Unauthorized")
+    }
+
+    const card = await ctx.db.get(args.cardId)
+    if (!card) {
+      throw new Error("Card not found")
+    }
+
+    const member = await ctx.db.get(card.memberId)
+    if (!member || member.userId !== userId) {
+      throw new Error("Unauthorized")
+    }
+
+    return await ctx.db.insert("todoComments", {
+      content: args.content,
+      cardId: args.cardId,
+      memberId: member._id,
+      workspaceId: card.workspaceId,
+      createdAt: Date.now(),
+    })
+  },
+})
+
+export const getComments = query({
+  args: { cardId: v.id("todoCards") },
+  handler: async (ctx, args) => {
+    const userId = await getAuthUserId(ctx)
+    if (!userId) {
+      return []
+    }
+
+    const card = await ctx.db.get(args.cardId)
+    if (!card) {
+      return []
+    }
+
+    const member = await ctx.db.get(card.memberId)
+    if (!member || member.userId !== userId) {
+      return []
+    }
+
+    const comments = await ctx.db
+      .query("todoComments")
+      .withIndex("by_card_id", (q) => q.eq("cardId", args.cardId))
+      .order("desc")
+      .collect()
+
+    // Get user info for each comment
+    const commentsWithUser = await Promise.all(
+      comments.map(async (comment) => {
+        const commentMember = await ctx.db.get(comment.memberId)
+        const user = commentMember ? await ctx.db.get(commentMember.userId) : null
+        return {
+          ...comment,
+          user: user ? { name: user.name, image: user.image } : null,
+        }
+      }),
+    )
+
+    return commentsWithUser
   },
 })

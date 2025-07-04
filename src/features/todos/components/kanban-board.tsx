@@ -1,85 +1,86 @@
 "use client"
 
-import type React from "react"
-
-import { useGetLists } from "@/features/todos/api/use-get-lists"
-import { useGetCards } from "@/features/todos/api/use-get-cards"
-import { useCreateList } from "@/features/todos/api/use-create-list"
-import { useCreateCard } from "@/features/todos/api/use-create-card"
+import { useState } from "react"
+import { DragDropContext, Droppable, Draggable, type DropResult } from "@hello-pangea/dnd"
+import { Plus, X, MoreHorizontal, Loader } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Card, CardContent } from "@/components/ui/card"
-import { Plus, X } from "lucide-react"
-import { useState } from "react"
-import type { Id } from "../../../../convex/_generated/dataModel"
+import { Card, CardContent, CardHeader } from "@/components/ui/card"
+import { useCreateList } from "@/features/todos/api/use-create-list"
+import { useCreateCard } from "@/features/todos/api/use-create-card"
+import { useUpdateCard } from "@/features/todos/api/use-update-card"
 import { KanbanCard } from "./kanban-card"
-import { DragDropContext, Droppable, Draggable, type DropResult } from "@hello-pangea/dnd"
-import { useMutation } from "convex/react"
-import { api } from "../../../../convex/_generated/api"
+import { useGetCards } from "@/features/todos/api/use-get-cards"
 import { toast } from "sonner"
+import type { Id } from "../../../../convex/_generated/dataModel"
 
 interface KanbanBoardProps {
   boardId: Id<"todoBoards">
+  lists: Array<{
+    _id: Id<"todoLists">
+    name: string
+    position: number
+    boardId: Id<"todoBoards">
+    memberId: Id<"members">
+    workspaceId: Id<"workspaces">
+    createdAt: number
+    updatedAt: number
+  }>
 }
 
-export function KanbanBoard({ boardId }: KanbanBoardProps) {
-  const { data: lists, isLoading: listsLoading } = useGetLists({ boardId })
-  const { mutate: createList, isPending: creatingList } = useCreateList()
-  const { mutate: createCard, isPending: creatingCard } = useCreateCard()
-  const moveCard = useMutation(api.todos.moveCard)
+export const KanbanBoard = ({ boardId, lists }: KanbanBoardProps) => {
+  const [isAddingList, setIsAddingList] = useState(false)
+  const [newListName, setNewListName] = useState("")
+  const [addingCardToList, setAddingCardToList] = useState<Id<"todoLists"> | null>(null)
+  const [newCardTitle, setNewCardTitle] = useState("")
 
-  const [newListTitle, setNewListTitle] = useState("")
-  const [showNewListForm, setShowNewListForm] = useState(false)
-  const [newCardTitles, setNewCardTitles] = useState<Record<string, string>>({})
-  const [showNewCardForms, setShowNewCardForms] = useState<Record<string, boolean>>({})
+  const { mutate: createList, isPending: isCreatingList } = useCreateList()
+  const { mutate: createCard, isPending: isCreatingCard } = useCreateCard()
+  const { mutate: updateCard } = useUpdateCard()
 
-  const handleCreateList = async (e: React.FormEvent) => {
-    e.preventDefault()
-
-    if (!newListTitle.trim()) return
+  const handleCreateList = () => {
+    if (!newListName.trim()) return
 
     createList(
       {
-        title: newListTitle.trim(),
+        name: newListName.trim(),
         boardId,
       },
       {
         onSuccess: () => {
-          setNewListTitle("")
-          setShowNewListForm(false)
-          toast.success("List created successfully")
+          setNewListName("")
+          setIsAddingList(false)
+          toast.success("List created successfully!")
         },
-        onError: () => {
-          toast.error("Failed to create list")
+        onError: (error) => {
+          toast.error(error.message || "Failed to create list")
         },
       },
     )
   }
 
-  const handleCreateCard = async (listId: Id<"todoLists">) => {
-    const title = newCardTitles[listId]
-    if (!title?.trim()) return
+  const handleCreateCard = (listId: Id<"todoLists">) => {
+    if (!newCardTitle.trim()) return
 
     createCard(
       {
-        title: title.trim(),
+        title: newCardTitle.trim(),
         listId,
-        boardId,
       },
       {
         onSuccess: () => {
-          setNewCardTitles((prev) => ({ ...prev, [listId]: "" }))
-          setShowNewCardForms((prev) => ({ ...prev, [listId]: false }))
-          toast.success("Card created successfully")
+          setNewCardTitle("")
+          setAddingCardToList(null)
+          toast.success("Card created successfully!")
         },
-        onError: () => {
-          toast.error("Failed to create card")
+        onError: (error) => {
+          toast.error(error.message || "Failed to create card")
         },
       },
     )
   }
 
-  const handleDragEnd = async (result: DropResult) => {
+  const handleDragEnd = (result: DropResult) => {
     const { destination, source, draggableId } = result
 
     if (!destination) return
@@ -88,209 +89,212 @@ export function KanbanBoard({ boardId }: KanbanBoardProps) {
       return
     }
 
-    try {
-      await moveCard({
-        cardId: draggableId as Id<"todoCards">,
-        sourceListId: source.droppableId as Id<"todoLists">,
-        destinationListId: destination.droppableId as Id<"todoLists">,
-        sourceIndex: source.index,
-        destinationIndex: destination.index,
-      })
-    } catch (error) {
-      toast.error("Failed to move card")
-      console.error(error)
+    // Handle card movement between lists
+    if (source.droppableId !== destination.droppableId) {
+      const cardId = draggableId as Id<"todoCards">
+      const newListId = destination.droppableId as Id<"todoLists">
+
+      updateCard(
+        {
+          cardId,
+          listId: newListId,
+          position: destination.index,
+        },
+        {
+          onError: (error) => {
+            toast.error(error.message || "Failed to move card")
+          },
+        },
+      )
     }
   }
 
-  if (listsLoading) {
-    return (
-      <div className="h-full flex items-center justify-center">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-white"></div>
-      </div>
-    )
-  }
+  const sortedLists = [...lists].sort((a, b) => a.position - b.position)
 
   return (
     <DragDropContext onDragEnd={handleDragEnd}>
-      <div className="h-full p-4 overflow-x-auto">
-        <div className="flex gap-4 h-full min-w-max">
-          {lists?.map((list) => (
-            <ListColumn
-              key={list._id}
-              list={list}
-              boardId={boardId}
-              newCardTitle={newCardTitles[list._id] || ""}
-              setNewCardTitle={(title) => setNewCardTitles((prev) => ({ ...prev, [list._id]: title }))}
-              showNewCardForm={showNewCardForms[list._id] || false}
-              setShowNewCardForm={(show) => setShowNewCardForms((prev) => ({ ...prev, [list._id]: show }))}
-              onCreateCard={() => handleCreateCard(list._id)}
-              creatingCard={creatingCard}
-            />
-          ))}
+      <div className="flex h-full gap-4 p-4 overflow-x-auto">
+        {sortedLists.map((list) => (
+          <KanbanList
+            key={list._id}
+            list={list}
+            isAddingCard={addingCardToList === list._id}
+            newCardTitle={newCardTitle}
+            setNewCardTitle={setNewCardTitle}
+            onAddCard={() => setAddingCardToList(list._id)}
+            onCancelAddCard={() => setAddingCardToList(null)}
+            onCreateCard={() => handleCreateCard(list._id)}
+            isCreatingCard={isCreatingCard}
+          />
+        ))}
 
-          <div className="flex-shrink-0 w-72">
-            {showNewListForm ? (
-              <Card className="bg-white/90">
-                <CardContent className="p-3">
-                  <form onSubmit={handleCreateList}>
-                    <Input
-                      value={newListTitle}
-                      onChange={(e) => setNewListTitle(e.target.value)}
-                      placeholder="Enter list title..."
-                      className="mb-2"
-                      autoFocus
-                    />
-                    <div className="flex gap-2">
-                      <Button type="submit" size="sm" disabled={creatingList || !newListTitle.trim()}>
-                        {creatingList ? "Adding..." : "Add List"}
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => {
-                          setShowNewListForm(false)
-                          setNewListTitle("")
-                        }}
-                      >
-                        <X className="w-4 h-4" />
-                      </Button>
-                    </div>
-                  </form>
-                </CardContent>
-              </Card>
-            ) : (
-              <Button
-                variant="ghost"
-                className="w-full h-12 bg-white/20 hover:bg-white/30 text-white border-dashed border-2 border-white/30"
-                onClick={() => setShowNewListForm(true)}
-              >
-                <Plus className="w-4 h-4 mr-2" />
-                Add a list
-              </Button>
-            )}
-          </div>
+        {/* Add List Column */}
+        <div className="flex-shrink-0 w-72">
+          {isAddingList ? (
+            <Card>
+              <CardContent className="p-3">
+                <Input
+                  value={newListName}
+                  onChange={(e) => setNewListName(e.target.value)}
+                  placeholder="Enter list title..."
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      handleCreateList()
+                    } else if (e.key === "Escape") {
+                      setIsAddingList(false)
+                      setNewListName("")
+                    }
+                  }}
+                  autoFocus
+                  disabled={isCreatingList}
+                />
+                <div className="flex gap-2 mt-2">
+                  <Button size="sm" onClick={handleCreateList} disabled={!newListName.trim() || isCreatingList}>
+                    Add List
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => {
+                      setIsAddingList(false)
+                      setNewListName("")
+                    }}
+                    disabled={isCreatingList}
+                  >
+                    <X className="size-4" />
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          ) : (
+            <Button
+              variant="ghost"
+              className="w-full h-12 border-2 border-dashed border-muted-foreground/25 hover:border-muted-foreground/50"
+              onClick={() => setIsAddingList(true)}
+            >
+              <Plus className="size-4 mr-2" />
+              Add a list
+            </Button>
+          )}
         </div>
       </div>
     </DragDropContext>
   )
 }
 
-interface ListColumnProps {
-  list: any
-  boardId: Id<"todoBoards">
+interface KanbanListProps {
+  list: {
+    _id: Id<"todoLists">
+    name: string
+    position: number
+    boardId: Id<"todoBoards">
+    memberId: Id<"members">
+    workspaceId: Id<"workspaces">
+    createdAt: number
+    updatedAt: number
+  }
+  isAddingCard: boolean
   newCardTitle: string
   setNewCardTitle: (title: string) => void
-  showNewCardForm: boolean
-  setShowNewCardForm: (show: boolean) => void
+  onAddCard: () => void
+  onCancelAddCard: () => void
   onCreateCard: () => void
-  creatingCard: boolean
+  isCreatingCard: boolean
 }
 
-function ListColumn({
+const KanbanList = ({
   list,
-  boardId,
+  isAddingCard,
   newCardTitle,
   setNewCardTitle,
-  showNewCardForm,
-  setShowNewCardForm,
+  onAddCard,
+  onCancelAddCard,
   onCreateCard,
-  creatingCard,
-}: ListColumnProps) {
-  const { data: cards, isLoading: cardsLoading } = useGetCards({ listId: list._id })
+  isCreatingCard,
+}: KanbanListProps) => {
+  const { data: cards, isLoading } = useGetCards({ listId: list._id })
+
+  const sortedCards = cards ? [...cards].sort((a, b) => a.position - b.position) : []
 
   return (
     <div className="flex-shrink-0 w-72">
-      <Card className="bg-white/90 h-full flex flex-col">
-        <CardContent className="p-3 flex-1 flex flex-col">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="font-semibold text-sm">{list.title}</h3>
-            <span className="text-xs text-muted-foreground">{cards?.length || 0}</span>
+      <Card>
+        <CardHeader className="pb-2">
+          <div className="flex items-center justify-between">
+            <h3 className="font-medium text-sm">{list.name}</h3>
+            <Button variant="ghost" size="sm" className="h-6 w-6 p-0">
+              <MoreHorizontal className="size-4" />
+            </Button>
           </div>
-
-          <Droppable droppableId={list._id}>
-            {(provided, snapshot) => (
-              <div
-                ref={provided.innerRef}
-                {...provided.droppableProps}
-                className={`flex-1 space-y-2 min-h-[100px] ${snapshot.isDraggingOver ? "bg-blue-50 rounded-lg" : ""}`}
-              >
-                {cardsLoading ? (
-                  <div className="space-y-2">
-                    {Array.from({ length: 3 }).map((_, i) => (
-                      <div key={i} className="h-20 bg-gray-200 rounded animate-pulse" />
-                    ))}
-                  </div>
-                ) : (
-                  cards?.map((card, index) => (
-                    <Draggable key={card._id} draggableId={card._id} index={index}>
-                      {(provided, snapshot) => (
-                        <div
-                          ref={provided.innerRef}
-                          {...provided.draggableProps}
-                          {...provided.dragHandleProps}
-                          className={snapshot.isDragging ? "rotate-3" : ""}
-                        >
-                          <KanbanCard card={card} />
-                        </div>
-                      )}
-                    </Draggable>
-                  ))
-                )}
-                {provided.placeholder}
-              </div>
-            )}
-          </Droppable>
-
-          <div className="mt-3">
-            {showNewCardForm ? (
-              <div className="space-y-2">
-                <Input
-                  value={newCardTitle}
-                  onChange={(e) => setNewCardTitle(e.target.value)}
-                  placeholder="Enter a title for this card..."
-                  className="text-sm"
-                  autoFocus
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      e.preventDefault()
-                      onCreateCard()
-                    }
-                    if (e.key === "Escape") {
-                      setShowNewCardForm(false)
-                      setNewCardTitle("")
-                    }
-                  }}
-                />
-                <div className="flex gap-2">
-                  <Button size="sm" onClick={onCreateCard} disabled={creatingCard || !newCardTitle.trim()}>
-                    {creatingCard ? "Adding..." : "Add card"}
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => {
-                      setShowNewCardForm(false)
-                      setNewCardTitle("")
-                    }}
-                  >
-                    <X className="w-4 h-4" />
-                  </Button>
+        </CardHeader>
+        <Droppable droppableId={list._id}>
+          {(provided, snapshot) => (
+            <CardContent
+              ref={provided.innerRef}
+              {...provided.droppableProps}
+              className={`space-y-2 min-h-[100px] ${snapshot.isDraggingOver ? "bg-muted/50" : ""}`}
+            >
+              {isLoading ? (
+                <div className="flex justify-center py-4">
+                  <Loader className="size-4 animate-spin" />
                 </div>
-              </div>
-            ) : (
-              <Button
-                variant="ghost"
-                size="sm"
-                className="w-full justify-start text-muted-foreground hover:bg-gray-100"
-                onClick={() => setShowNewCardForm(true)}
-              >
-                <Plus className="w-4 h-4 mr-2" />
-                Add a card
-              </Button>
-            )}
-          </div>
-        </CardContent>
+              ) : (
+                sortedCards.map((card, index) => (
+                  <Draggable key={card._id} draggableId={card._id} index={index}>
+                    {(provided, snapshot) => (
+                      <div
+                        ref={provided.innerRef}
+                        {...provided.draggableProps}
+                        {...provided.dragHandleProps}
+                        className={snapshot.isDragging ? "rotate-2" : ""}
+                      >
+                        <KanbanCard card={card} />
+                      </div>
+                    )}
+                  </Draggable>
+                ))
+              )}
+              {provided.placeholder}
+
+              {isAddingCard ? (
+                <div className="space-y-2">
+                  <Input
+                    value={newCardTitle}
+                    onChange={(e) => setNewCardTitle(e.target.value)}
+                    placeholder="Enter a title for this card..."
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        onCreateCard()
+                      } else if (e.key === "Escape") {
+                        onCancelAddCard()
+                      }
+                    }}
+                    autoFocus
+                    disabled={isCreatingCard}
+                  />
+                  <div className="flex gap-2">
+                    <Button size="sm" onClick={onCreateCard} disabled={!newCardTitle.trim() || isCreatingCard}>
+                      Add card
+                    </Button>
+                    <Button size="sm" variant="ghost" onClick={onCancelAddCard} disabled={isCreatingCard}>
+                      <X className="size-4" />
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="w-full justify-start text-muted-foreground hover:text-foreground"
+                  onClick={onAddCard}
+                >
+                  <Plus className="size-4 mr-2" />
+                  Add a card
+                </Button>
+              )}
+            </CardContent>
+          )}
+        </Droppable>
       </Card>
     </div>
   )

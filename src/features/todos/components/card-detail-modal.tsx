@@ -1,42 +1,47 @@
 "use client"
 
+import { useState } from "react"
+import { Calendar, Tag, X } from "lucide-react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
-import { Badge } from "@/components/ui/badge"
 import { Label } from "@/components/ui/label"
-import { Calendar, Tag, Trash2, Save, X } from "lucide-react"
-import { useState, useEffect } from "react"
+import { Badge } from "@/components/ui/badge"
 import { useUpdateCard } from "@/features/todos/api/use-update-card"
-import { useMutation } from "convex/react"
-import { api } from "../../../../convex/_generated/api"
 import { toast } from "sonner"
+import { format } from "date-fns"
+import type { Id } from "../../../../convex/_generated/dataModel"
 
 interface CardDetailModalProps {
-  card: any
+  card: {
+    _id: Id<"todoCards">
+    title: string
+    description?: string
+    listId: Id<"todoLists">
+    boardId: Id<"todoBoards">
+    memberId: Id<"members">
+    workspaceId: Id<"workspaces">
+    position: number
+    dueDate?: number
+    isCompleted?: boolean
+    labels?: string[]
+    attachments?: Id<"_storage">[]
+    createdAt: number
+    updatedAt: number
+  }
   open: boolean
   onOpenChange: (open: boolean) => void
 }
 
-export function CardDetailModal({ card, open, onOpenChange }: CardDetailModalProps) {
-  const { mutate: updateCard, isPending } = useUpdateCard()
-  const deleteCard = useMutation(api.todos.deleteCard)
-
+export const CardDetailModal = ({ card, open, onOpenChange }: CardDetailModalProps) => {
   const [title, setTitle] = useState(card.title)
   const [description, setDescription] = useState(card.description || "")
-  const [dueDate, setDueDate] = useState(card.dueDate ? new Date(card.dueDate).toISOString().split("T")[0] : "")
-  const [isCompleted, setIsCompleted] = useState(card.isCompleted)
-  const [labels, setLabels] = useState<string[]>(card.labels || [])
+  const [dueDate, setDueDate] = useState(card.dueDate ? format(card.dueDate, "yyyy-MM-dd") : "")
   const [newLabel, setNewLabel] = useState("")
+  const [labels, setLabels] = useState(card.labels || [])
 
-  useEffect(() => {
-    setTitle(card.title)
-    setDescription(card.description || "")
-    setDueDate(card.dueDate ? new Date(card.dueDate).toISOString().split("T")[0] : "")
-    setIsCompleted(card.isCompleted)
-    setLabels(card.labels || [])
-  }, [card])
+  const { mutate: updateCard, isPending } = useUpdateCard()
 
   const handleSave = () => {
     updateCard(
@@ -45,94 +50,104 @@ export function CardDetailModal({ card, open, onOpenChange }: CardDetailModalPro
         title: title.trim(),
         description: description.trim() || undefined,
         dueDate: dueDate ? new Date(dueDate).getTime() : undefined,
-        isCompleted,
-        labels,
+        labels: labels.length > 0 ? labels : undefined,
       },
       {
         onSuccess: () => {
-          toast.success("Card updated successfully")
+          toast.success("Card updated successfully!")
           onOpenChange(false)
         },
-        onError: () => {
-          toast.error("Failed to update card")
+        onError: (error) => {
+          toast.error(error.message || "Failed to update card")
         },
       },
     )
   }
 
-  const handleDelete = async () => {
-    if (confirm("Are you sure you want to delete this card?")) {
-      try {
-        await deleteCard({ cardId: card._id })
-        toast.success("Card deleted successfully")
-        onOpenChange(false)
-      } catch (error) {
-        toast.error("Failed to delete card")
-      }
-    }
+  const handleAddLabel = () => {
+    if (!newLabel.trim() || labels.includes(newLabel.trim())) return
+    setLabels([...labels, newLabel.trim()])
+    setNewLabel("")
   }
 
-  const addLabel = () => {
-    if (newLabel.trim() && !labels.includes(newLabel.trim())) {
-      setLabels([...labels, newLabel.trim()])
-      setNewLabel("")
-    }
-  }
-
-  const removeLabel = (labelToRemove: string) => {
+  const handleRemoveLabel = (labelToRemove: string) => {
     setLabels(labels.filter((label) => label !== labelToRemove))
   }
 
-  const getLabelColor = (label: string): string => {
-    const colors = [
-      "#61bd4f",
-      "#f2d600",
-      "#ff9f1a",
-      "#eb5a46",
-      "#c377e0",
-      "#0079bf",
-      "#00c2e0",
-      "#51e898",
-      "#ff78cb",
-      "#344563",
-    ]
-
-    let hash = 0
-    for (let i = 0; i < label.length; i++) {
-      hash = label.charCodeAt(i) + ((hash << 5) - hash)
-    }
-
-    return colors[Math.abs(hash) % colors.length]
+  const handleToggleComplete = () => {
+    updateCard(
+      {
+        cardId: card._id,
+        isCompleted: !card.isCompleted,
+      },
+      {
+        onSuccess: () => {
+          toast.success(card.isCompleted ? "Card marked as incomplete" : "Card marked as complete")
+        },
+        onError: (error) => {
+          toast.error(error.message || "Failed to update card")
+        },
+      },
+    )
   }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <Input
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              className="text-lg font-semibold border-none p-0 h-auto focus-visible:ring-0"
-              placeholder="Card title..."
-            />
-          </DialogTitle>
+          <DialogTitle>Card Details</DialogTitle>
         </DialogHeader>
 
         <div className="space-y-6">
+          {/* Title */}
+          <div className="space-y-2">
+            <Label htmlFor="title">Title</Label>
+            <Input id="title" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Card title..." />
+          </div>
+
+          {/* Description */}
+          <div className="space-y-2">
+            <Label htmlFor="description">Description</Label>
+            <Textarea
+              id="description"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="Add a description..."
+              rows={4}
+            />
+          </div>
+
+          {/* Due Date */}
+          <div className="space-y-2">
+            <Label htmlFor="dueDate">Due Date</Label>
+            <div className="flex items-center gap-2">
+              <Calendar className="size-4 text-muted-foreground" />
+              <Input
+                id="dueDate"
+                type="date"
+                value={dueDate}
+                onChange={(e) => setDueDate(e.target.value)}
+                className="w-auto"
+              />
+            </div>
+          </div>
+
           {/* Labels */}
-          <div>
-            <Label className="text-sm font-medium mb-2 block">Labels</Label>
+          <div className="space-y-2">
+            <Label>Labels</Label>
             <div className="flex flex-wrap gap-2 mb-2">
-              {labels.map((label, index) => (
-                <Badge
-                  key={index}
-                  className="text-white cursor-pointer hover:opacity-80"
-                  style={{ backgroundColor: getLabelColor(label) }}
-                  onClick={() => removeLabel(label)}
-                >
+              {labels.map((label) => (
+                <Badge key={label} variant="secondary" className="flex items-center gap-1">
+                  <Tag className="size-3" />
                   {label}
-                  <X className="w-3 h-3 ml-1" />
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-4 w-4 p-0 hover:bg-destructive hover:text-destructive-foreground"
+                    onClick={() => handleRemoveLabel(label)}
+                  >
+                    <X className="size-3" />
+                  </Button>
                 </Badge>
               ))}
             </div>
@@ -141,83 +156,34 @@ export function CardDetailModal({ card, open, onOpenChange }: CardDetailModalPro
                 value={newLabel}
                 onChange={(e) => setNewLabel(e.target.value)}
                 placeholder="Add a label..."
-                className="flex-1"
                 onKeyDown={(e) => {
                   if (e.key === "Enter") {
-                    e.preventDefault()
-                    addLabel()
+                    handleAddLabel()
                   }
                 }}
               />
-              <Button onClick={addLabel} size="sm" disabled={!newLabel.trim()}>
-                <Tag className="w-4 h-4" />
+              <Button variant="outline" onClick={handleAddLabel} disabled={!newLabel.trim()}>
+                Add
               </Button>
             </div>
-          </div>
-
-          {/* Description */}
-          <div>
-            <Label htmlFor="description" className="text-sm font-medium mb-2 block">
-              Description
-            </Label>
-            <Textarea
-              id="description"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder="Add a more detailed description..."
-              rows={4}
-            />
-          </div>
-
-          {/* Due Date */}
-          <div>
-            <Label htmlFor="dueDate" className="text-sm font-medium mb-2 block">
-              Due Date
-            </Label>
-            <div className="flex items-center gap-2">
-              <Calendar className="w-4 h-4 text-muted-foreground" />
-              <Input
-                id="dueDate"
-                type="date"
-                value={dueDate}
-                onChange={(e) => setDueDate(e.target.value)}
-                className="w-auto"
-              />
-              {dueDate && (
-                <Button variant="ghost" size="sm" onClick={() => setDueDate("")}>
-                  <X className="w-4 h-4" />
-                </Button>
-              )}
-            </div>
-          </div>
-
-          {/* Completion Status */}
-          <div className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              id="completed"
-              checked={isCompleted}
-              onChange={(e) => setIsCompleted(e.target.checked)}
-              className="rounded"
-            />
-            <Label htmlFor="completed" className="text-sm">
-              Mark as completed
-            </Label>
           </div>
 
           {/* Actions */}
-          <div className="flex justify-between pt-4 border-t">
-            <Button variant="destructive" onClick={handleDelete} className="flex items-center gap-2">
-              <Trash2 className="w-4 h-4" />
-              Delete Card
-            </Button>
-
+          <div className="flex items-center justify-between pt-4 border-t">
             <div className="flex gap-2">
-              <Button variant="outline" onClick={() => onOpenChange(false)}>
+              <Button
+                variant={card.isCompleted ? "outline" : "default"}
+                onClick={handleToggleComplete}
+                disabled={isPending}
+              >
+                {card.isCompleted ? "Mark Incomplete" : "Mark Complete"}
+              </Button>
+            </div>
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isPending}>
                 Cancel
               </Button>
               <Button onClick={handleSave} disabled={isPending || !title.trim()}>
-                <Save className="w-4 h-4 mr-2" />
                 {isPending ? "Saving..." : "Save Changes"}
               </Button>
             </div>

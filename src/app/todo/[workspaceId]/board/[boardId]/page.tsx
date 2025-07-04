@@ -1,73 +1,51 @@
 "use client"
 
+import { Loader, TriangleAlert } from "lucide-react"
 import { useGetBoard } from "@/features/todos/api/use-get-board"
+import { useGetLists } from "@/features/todos/api/use-get-lists"
 import { KanbanBoard } from "@/features/todos/components/kanban-board"
-import { Button } from "@/components/ui/button"
-import { ArrowLeft, Settings } from "lucide-react"
-import { useRouter } from "next/navigation"
-import type { Id } from "../../../../../convex/_generated/dataModel"
+import type { Id } from "../../../../../../convex/_generated/dataModel"
 
 interface BoardPageProps {
   params: {
-    workspaceId: Id<"workspaces">
-    boardId: Id<"todoBoards">
+    workspaceId: string
+    boardId: string
   }
 }
 
-export default function BoardPage({ params }: BoardPageProps) {
-  const router = useRouter()
-  const { data: board, isLoading } = useGetBoard({ boardId: params.boardId })
+const BoardPage = ({ params }: BoardPageProps) => {
+  const boardId = params.boardId as Id<"todoBoards">
+  const { data: board, isLoading: boardLoading } = useGetBoard({ boardId })
+  const { data: lists, isLoading: listsLoading } = useGetLists({ boardId })
 
-  if (isLoading) {
+  if (boardLoading || listsLoading) {
     return (
-      <div className="h-full flex items-center justify-center">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900"></div>
+      <div className="flex h-full flex-1 flex-col items-center justify-center gap-2">
+        <Loader className="size-5 animate-spin text-muted-foreground" />
       </div>
     )
   }
 
   if (!board) {
     return (
-      <div className="h-full flex items-center justify-center">
-        <div className="text-center">
-          <h2 className="text-2xl font-bold mb-2">Board not found</h2>
-          <p className="text-muted-foreground mb-4">The board you're looking for doesn't exist.</p>
-          <Button onClick={() => router.push(`/todo/${params.workspaceId}`)}>
-            <ArrowLeft className="w-4 h-4 mr-2" />
-            Back to Boards
-          </Button>
-        </div>
+      <div className="flex h-full flex-1 flex-col items-center justify-center gap-2">
+        <TriangleAlert className="size-5 text-muted-foreground" />
+        <span className="text-sm text-muted-foreground">Board not found.</span>
       </div>
     )
   }
 
   return (
-    <div className="h-full flex flex-col" style={{ backgroundColor: board.backgroundColor || "#0079bf" }}>
-      <div className="flex items-center justify-between p-4 bg-black/10">
-        <div className="flex items-center gap-4">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => router.push(`/todo/${params.workspaceId}`)}
-            className="text-white hover:bg-white/20"
-          >
-            <ArrowLeft className="w-4 h-4 mr-2" />
-            Back
-          </Button>
-          <div>
-            <h1 className="text-xl font-bold text-white">{board.title}</h1>
-            {board.description && <p className="text-white/80 text-sm">{board.description}</p>}
-          </div>
-        </div>
-
-        <Button variant="ghost" size="sm" className="text-white hover:bg-white/20">
-          <Settings className="w-4 h-4" />
-        </Button>
+    <div className="flex h-full flex-col">
+      <div className="flex h-[49px] items-center border-b bg-white px-4">
+        <h1 className="text-lg font-semibold">{board.name}</h1>
+        {board.description && <span className="ml-4 text-sm text-muted-foreground">{board.description}</span>}
       </div>
-
       <div className="flex-1 overflow-hidden">
-        <KanbanBoard boardId={params.boardId} />
+        <KanbanBoard boardId={boardId} lists={lists || []} />
       </div>
     </div>
   )
 }
+
+export default BoardPage

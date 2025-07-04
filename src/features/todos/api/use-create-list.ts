@@ -6,7 +6,7 @@ import { useCallback, useMemo, useState } from "react"
 import type { Id } from "../../../../convex/_generated/dataModel"
 
 type RequestType = {
-  title: string
+  name: string
   boardId: Id<"todoBoards">
 }
 

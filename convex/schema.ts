@@ -1,7 +1,9 @@
+import { authTables } from "@convex-dev/auth/server"
 import { defineSchema, defineTable } from "convex/server"
 import { v } from "convex/values"
 
 const schema = defineSchema({
+  ...authTables,
   workspaces: defineTable({
     name: v.string(),
     userId: v.id("users"),
@@ -49,91 +51,133 @@ const schema = defineSchema({
     .index("by_workspace_id", ["workspaceId"])
     .index("by_message_id", ["messageId"])
     .index("by_member_id", ["memberId"]),
-  users: defineTable({
-    name: v.string(),
-    email: v.string(),
-    image: v.optional(v.string()),
-  }).index("by_email", ["email"]),
+  // Attendance table
   attendance: defineTable({
-    userId: v.id("users"),
+    memberId: v.id("members"),
     workspaceId: v.id("workspaces"),
-    date: v.string(),
-    checkInTime: v.optional(v.number()),
+    date: v.number(),
+    checkInTime: v.number(),
     checkOutTime: v.optional(v.number()),
-    status: v.union(
-      v.literal("present"),
-      v.literal("absent"),
-      v.literal("pending"),
-      v.literal("approved"),
-      v.literal("rejected"),
-    ),
-    adminApproval: v.optional(v.boolean()),
-    reason: v.optional(v.string()),
+    workLocation: v.union(v.literal("office"), v.literal("home")),
+    location: v.optional(v.string()),
+    checkInNotes: v.optional(v.string()),
+    tasks: v.optional(v.string()),
+    taskImage: v.optional(v.id("_storage")),
+    status: v.union(v.literal("pending"), v.literal("approved"), v.literal("rejected"), v.literal("absent")),
+    adminNotes: v.optional(v.string()),
+    approvedBy: v.optional(v.id("members")),
+    approvedAt: v.optional(v.number()),
   })
-    .index("by_user_workspace", ["userId", "workspaceId"])
-    .index("by_workspace_date", ["workspaceId", "date"])
-    .index("by_date", ["date"]),
+    .index("by_workspace_id", ["workspaceId"])
+    .index("by_member_id", ["memberId"])
+    .index("by_member_id_date", ["memberId", "date"])
+    .index("by_status", ["status"]),
+  // Attendance comments table
   attendanceComments: defineTable({
     attendanceId: v.id("attendance"),
-    userId: v.id("users"),
+    memberId: v.id("members"),
     workspaceId: v.id("workspaces"),
     content: v.string(),
     image: v.optional(v.id("_storage")),
     createdAt: v.number(),
   })
-    .index("by_attendance", ["attendanceId"])
-    .index("by_workspace", ["workspaceId"]),
+    .index("by_attendance_id", ["attendanceId"])
+    .index("by_workspace_id", ["workspaceId"])
+    .index("by_member_id", ["memberId"]),
+  // Leave requests table
+  leaveRequests: defineTable({
+    memberId: v.id("members"),
+    workspaceId: v.id("workspaces"),
+    startDate: v.number(),
+    endDate: v.number(),
+    reason: v.string(),
+    leaveType: v.union(v.literal("sick"), v.literal("vacation"), v.literal("personal"), v.literal("other")),
+    status: v.union(v.literal("pending"), v.literal("approved"), v.literal("rejected")),
+    adminNotes: v.optional(v.string()),
+    approvedBy: v.optional(v.id("members")),
+    approvedAt: v.optional(v.number()),
+  })
+    .index("by_workspace_id", ["workspaceId"])
+    .index("by_member_id", ["memberId"])
+    .index("by_status", ["status"]),
   // Todo/Kanban tables
   todoBoards: defineTable({
-    title: v.string(),
+    name: v.string(),
     description: v.optional(v.string()),
-    userId: v.id("users"),
+    background: v.optional(v.string()),
+    memberId: v.id("members"),
     workspaceId: v.id("workspaces"),
-    backgroundColor: v.optional(v.string()),
+    isStarred: v.optional(v.boolean()),
     createdAt: v.number(),
     updatedAt: v.number(),
   })
-    .index("by_user_workspace", ["userId", "workspaceId"])
-    .index("by_workspace", ["workspaceId"]),
+    .index("by_member_id", ["memberId"])
+    .index("by_workspace_id", ["workspaceId"])
+    .index("by_member_workspace", ["memberId", "workspaceId"]),
   todoLists: defineTable({
-    title: v.string(),
+    name: v.string(),
     boardId: v.id("todoBoards"),
-    userId: v.id("users"),
+    memberId: v.id("members"),
+    workspaceId: v.id("workspaces"),
     position: v.number(),
     createdAt: v.number(),
     updatedAt: v.number(),
   })
-    .index("by_board", ["boardId"])
-    .index("by_user", ["userId"]),
+    .index("by_board_id", ["boardId"])
+    .index("by_member_id", ["memberId"])
+    .index("by_workspace_id", ["workspaceId"]),
   todoCards: defineTable({
     title: v.string(),
     description: v.optional(v.string()),
     listId: v.id("todoLists"),
     boardId: v.id("todoBoards"),
-    userId: v.id("users"),
+    memberId: v.id("members"),
+    workspaceId: v.id("workspaces"),
     position: v.number(),
     dueDate: v.optional(v.number()),
-    isCompleted: v.boolean(),
-    labels: v.array(v.string()),
+    isCompleted: v.optional(v.boolean()),
+    labels: v.optional(v.array(v.string())),
+    attachments: v.optional(v.array(v.id("_storage"))),
     createdAt: v.number(),
     updatedAt: v.number(),
   })
-    .index("by_list", ["listId"])
-    .index("by_board", ["boardId"])
-    .index("by_user", ["userId"]),
+    .index("by_list_id", ["listId"])
+    .index("by_board_id", ["boardId"])
+    .index("by_member_id", ["memberId"])
+    .index("by_workspace_id", ["workspaceId"]),
   todoChecklists: defineTable({
-    cardId: v.id("todoCards"),
     title: v.string(),
-    items: v.array(
-      v.object({
-        id: v.string(),
-        text: v.string(),
-        isCompleted: v.boolean(),
-      }),
-    ),
+    cardId: v.id("todoCards"),
+    memberId: v.id("members"),
+    workspaceId: v.id("workspaces"),
+    position: v.number(),
     createdAt: v.number(),
-    updatedAt: v.number(),
-  }).index("by_card", ["cardId"]),
+  })
+    .index("by_card_id", ["cardId"])
+    .index("by_member_id", ["memberId"]),
+  todoChecklistItems: defineTable({
+    text: v.string(),
+    checklistId: v.id("todoChecklists"),
+    cardId: v.id("todoCards"),
+    memberId: v.id("members"),
+    workspaceId: v.id("workspaces"),
+    isCompleted: v.boolean(),
+    position: v.number(),
+    createdAt: v.number(),
+  })
+    .index("by_checklist_id", ["checklistId"])
+    .index("by_card_id", ["cardId"])
+    .index("by_member_id", ["memberId"]),
+  todoComments: defineTable({
+    content: v.string(),
+    cardId: v.id("todoCards"),
+    memberId: v.id("members"),
+    workspaceId: v.id("workspaces"),
+    createdAt: v.number(),
+    updatedAt: v.optional(v.number()),
+  })
+    .index("by_card_id", ["cardId"])
+    .index("by_member_id", ["memberId"]),
 })
 
 export default schema
