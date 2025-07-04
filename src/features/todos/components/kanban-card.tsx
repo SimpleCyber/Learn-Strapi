@@ -46,25 +46,7 @@ export const KanbanCard = ({ card }: KanbanCardProps) => {
     <>
       <Card className="cursor-pointer hover:shadow-md transition-shadow bg-white" onClick={() => setIsModalOpen(true)}>
         <CardContent className="p-3 space-y-2">
-          {/* Labels */}
-          {card.labels && card.labels.length > 0 && (
-            <div className="flex flex-wrap gap-1">
-              {card.labels.slice(0, 3).map((label, index) => (
-                <Badge
-                  key={label}
-                  variant="secondary"
-                  className={`text-xs px-2 py-0.5 ${labelColors[index % labelColors.length]}`}
-                >
-                  {label}
-                </Badge>
-              ))}
-              {card.labels.length > 3 && (
-                <Badge variant="secondary" className="text-xs px-2 py-0.5">
-                  +{card.labels.length - 3}
-                </Badge>
-              )}
-            </div>
-          )}
+          
 
           {/* Title */}
           <h4 className="text-sm font-medium leading-tight">{card.title}</h4>
@@ -90,22 +72,26 @@ export const KanbanCard = ({ card }: KanbanCardProps) => {
             </div>
           )}
 
-          {/* Footer with icons */}
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              {card.description && (
-                <div className="flex items-center gap-1 text-muted-foreground">
-                  <MessageSquare className="size-3" />
-                  <span className="text-xs">1</span>
-                </div>
-              )}
-              {card.attachments && card.attachments.length > 0 && (
-                <div className="flex items-center gap-1 text-muted-foreground">
-                  <Paperclip className="size-3" />
-                  <span className="text-xs">{card.attachments.length}</span>
-                </div>
+            {/* Labels */}
+          {card.labels && card.labels.length > 0 && (
+            <div className="flex flex-wrap gap-1">
+              {card.labels.slice(0, 3).map((label, index) => (
+                <Badge
+                  key={label}
+                  variant="secondary"
+                  className={`text-xs px-2 py-0.5 ${labelColors[index % labelColors.length]}`}
+                >
+                  {label}
+                </Badge>
+              ))}
+              {card.labels.length > 3 && (
+                <Badge variant="secondary" className="text-xs px-2 py-0.5">
+                  +{card.labels.length - 3}
+                </Badge>
               )}
             </div>
+          )}
             {card.isCompleted && <CheckSquare className="size-4 text-green-600" />}
           </div>
         </CardContent>
