@@ -184,6 +184,68 @@ const schema = defineSchema({
   })
     .index("by_card_id", ["cardId"])
     .index("by_member_id", ["memberId"]),
+
+  // Project Management tables
+  projectBoards: defineTable({
+    name: v.string(),
+    description: v.optional(v.string()),
+    background: v.optional(v.string()),
+    boardCode: v.string(), // B01, B02, etc.
+    memberId: v.id("members"),
+    workspaceId: v.id("workspaces"),
+    isStarred: v.optional(v.boolean()),
+    isArchived: v.optional(v.boolean()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_member_id", ["memberId"])
+    .index("by_workspace_id", ["workspaceId"])
+    .index("by_member_workspace", ["memberId", "workspaceId"])
+    .index("by_workspace_archived", ["workspaceId", "isArchived"]),
+
+  projectLists: defineTable({
+    name: v.string(),
+    boardId: v.id("projectBoards"),
+    memberId: v.id("members"),
+    workspaceId: v.id("workspaces"),
+    position: v.number(),
+    isArchived: v.optional(v.boolean()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_board_id", ["boardId"])
+    .index("by_member_id", ["memberId"])
+    .index("by_workspace_id", ["workspaceId"])
+    .index("by_board_archived", ["boardId", "isArchived"]),
+
+  projectTasks: defineTable({
+    title: v.string(),
+    description: v.optional(v.string()),
+    taskCode: v.string(), // B01-1, B01-2, etc.
+    listId: v.id("projectLists"),
+    boardId: v.id("projectBoards"),
+    createdById: v.id("members"),
+    assignedToId: v.id("members"),
+    assignedById: v.id("members"),
+    workspaceId: v.id("workspaces"),
+    position: v.number(),
+    priority: v.union(v.literal("low"), v.literal("medium"), v.literal("high"), v.literal("urgent")),
+    dueDate: v.optional(v.number()),
+    isCompleted: v.optional(v.boolean()),
+    isArchived: v.optional(v.boolean()),
+    labels: v.optional(v.array(v.string())),
+    attachments: v.optional(v.array(v.id("_storage"))),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+    assignedAt: v.number(),
+  })
+    .index("by_list_id", ["listId"])
+    .index("by_board_id", ["boardId"])
+    .index("by_created_by", ["createdById"])
+    .index("by_assigned_to", ["assignedToId"])
+    .index("by_assigned_by", ["assignedById"])
+    .index("by_workspace_id", ["workspaceId"])
+    .index("by_list_archived", ["listId", "isArchived"]),
 })
 
 export default schema

@@ -20,7 +20,7 @@ export const Sidebar = () => {
   const navigationItems = [
     { icon: Kanban, label: 'ToDo', path: `/todo/${workspaceId}` },
     { icon: MessagesSquare, label: 'Chat', path: `/workspace/${workspaceId}` },
-    { icon: ListTodo, label: 'Project', path: `/project/${workspaceId}` },
+    { icon: ListTodo, label: 'Project', path: `/projects/${workspaceId}` },
     { icon: Presentation, label: 'Board', path: `/board/${workspaceId}` },
     { icon: UserRoundSearch, label: 'Members', path: `/members/${workspaceId}` },
     { icon: Calendar, label: 'Attendence', path: `/attendance/${workspaceId}` },

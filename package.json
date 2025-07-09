@@ -53,11 +53,11 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/sanidhyy/slack-clone.git"
+    "url": "https://github.com/SimpleCyber.git"
   },
-  "homepage": "https://github.com/sanidhyy/slack-clone#readme",
+  "homepage": "https://github.com/SimpleCyber#readme",
   "bugs": {
-    "url": "https://github.com/sanidhyy/slack-clone/issues",
+    "url": "https://github.com/SimpleCyber/issues",
     "email": "sanidhya.verma12345@gmail.com"
   },
   "funding": [
@@ -83,6 +83,7 @@
     "@radix-ui/react-popover": "^1.1.1",
     "@radix-ui/react-radio-group": "^1.3.7",
     "@radix-ui/react-scroll-area": "^1.2.9",
+    "@radix-ui/react-select": "^2.2.5",
     "@radix-ui/react-separator": "^1.1.0",
     "@radix-ui/react-slot": "^1.2.3",
     "@radix-ui/react-tabs": "^1.1.12",

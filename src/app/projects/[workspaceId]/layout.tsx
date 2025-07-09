@@ -7,13 +7,13 @@ import { Toolbar } from "@/components/toolbar/toolbar"
 import { WorkspaceSidebar } from "@/components/workspace-header/workspace-sidebar"
 import { WorkspaceSidebarContent } from "./workspace-sidebar-content"
 
-const ProjectWorkspaceLayout = ({ children }: Readonly<PropsWithChildren>) => {
+const ProjectsWorkspaceLayout = ({ children }: Readonly<PropsWithChildren>) => {
   return (
     <div className="h-full">
       <Toolbar />
       <div className="flex h-[calc(100vh_-_40px)]">
         <Sidebar />
-        <ResizablePanelGroup direction="horizontal" autoSaveId="project-workspace-layout">
+        <ResizablePanelGroup direction="horizontal" autoSaveId="projects-workspace-layout">
           <ResizablePanel defaultSize={20} minSize={11} className="bg-[#5E2C5F]">
             <WorkspaceSidebar>
               <WorkspaceSidebarContent />
@@ -29,4 +29,4 @@ const ProjectWorkspaceLayout = ({ children }: Readonly<PropsWithChildren>) => {
   )
 }
 
-export default ProjectWorkspaceLayout
+export default ProjectsWorkspaceLayout
