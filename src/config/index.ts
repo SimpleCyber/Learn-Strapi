@@ -41,11 +41,11 @@ export const siteConfig: Metadata = {
     'lucide-react',
   ] as Array<string>,
   authors: {
-    name: 'Sanidhya Kumar Verma',
-    url: 'https://github.com/sanidhyy',
+    name: 'Cyber Chakra',
+    url: 'https://github.com/SimpleCyber',
   },
 } as const;
 
 export const links = {
-  sourceCode: 'https://github.com/sanidhyy/slack-clone',
+  sourceCode: 'https://github.com/simplecyber',
 } as const;
